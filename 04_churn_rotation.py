@@ -1,0 +1,33 @@
+import pandas as pd
+df = pd.read_csv('cleaned_data.csv', parse_dates=['date'])
+lifecycle = pd.read_csv('lifecycle_table.csv', parse_dates=['entry_date', 'exit_date'])
+all_dates = sorted(df['date'].unique())
+# entries per day = tracks whose entry_date == that day
+entries_per_day = lifecycle.groupby('entry_date').size().rename('entries')
+# exits per day = tracks whose exit_date == that day (and it's not the last day in dataset, else it's "still active")
+last_day = df['date'].max()
+exits = lifecycle[lifecycle['exit_date'] != last_day]
+exits_per_day = exits.groupby('exit_date').size().rename('exits')
+daily_flow = pd.DataFrame(index=all_dates)
+daily_flow = daily_flow.join(entries_per_day).join(exits_per_day).fillna(0)
+daily_flow['churn_rate'] = (daily_flow['entries'] + daily_flow['exits']) / (2 * 50) # fraction of the 50 slots that changed
+avg_churn_rate = daily_flow['churn_rate'].mean()
+print(f"Average daily churn rate: {avg_churn_rate*100:.1f}% of the Top 50 (entries+exits) per day")
+print(f"Average daily entries: {daily_flow['entries'].mean():.2f}")
+print(f"Average daily exits: {daily_flow['exits'].mean():.2f}")
+print()
+# Retention Stability Index: share of tracks in "Mature" or "Peak" stage vs total (higher = more stable playlist)
+stages = pd.read_csv('daily_with_stages.csv')
+stable_share = stages['lifecycle_stage'].isin(['Mature', 'Peak']).mean()
+print(f"Retention Stability Index (share of obs in Mature/Peak): {stable_share*100:.1f}%")
+print()
+# Month-over-month churn comparison
+daily_flow_reset = daily_flow.reset_index().rename(columns={'index': 'date'})
+daily_flow_reset['date'] = pd.to_datetime(daily_flow_reset['date'])
+daily_flow_reset['month'] = daily_flow_reset['date'].dt.to_period('M')
+monthly_churn = daily_flow_reset.groupby('month')['churn_rate'].mean()
+print("Monthly average churn rate:")
+print((monthly_churn * 100).round(1))
+daily_flow_reset.to_csv('daily_churn.csv', index=False)
+monthly_churn.to_csv('monthly_churn.csv')
+print("\nSaved daily_churn.csv and monthly_churn.csv")
